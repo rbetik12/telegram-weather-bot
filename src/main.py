@@ -3,6 +3,7 @@ import requests
 import json
 import datetime
 from pymongo import MongoClient
+from typing import Union
 
 db_client = MongoClient()
 db = db_client.tgbot
@@ -38,10 +39,11 @@ def start_message(message):
 def send_location(message):
     user_id = message.from_user.id
     cached_user_geo_info[user_id] = message.location
+    message_str = str(message.location).replace('\'', '"')
     if user_geo_info_db.find_one({'user_id': user_id}) is None:
-        user_geo_info_db.insert_one({'user_id': user_id, 'location': json.dumps(str(message.location))})
+        user_geo_info_db.insert_one({'user_id': user_id, 'location': message_str})
     else:
-        user_geo_info_db.update_one({'user_id': user_id}, {'$set': {'location': json.dumps(str(message.location))}})
+        user_geo_info_db.update_one({'user_id': user_id}, {'$set': {'location': message_str}})
     bot.send_message(message.chat.id, 'Successfully set new location!')
 
 
@@ -54,10 +56,10 @@ def send_text(message):
 
 
 def get_weather(message):
-    try:
-        location = cached_user_geo_info[message.from_user.id]
-    except KeyError:
-        bot.send_message(message.chat.id, 'You must send your location to bot first')
+    user_id = message.from_user.id
+    location = check_location(user_id)
+    if location is None:
+        bot.send_message(message.chat.id, 'You must set you location first')
         return
     response = requests.get('http://api.openweathermap.org/data/2.5/weather?lat=%f&lon=%f&appid=%s' % (
         location.latitude, location.longitude, WEATHER_API_KEY))
@@ -74,10 +76,10 @@ def get_weather(message):
 
 
 def get_forecast(message):
-    try:
-        location = cached_user_geo_info[message.from_user.id]
-    except KeyError:
-        bot.send_message(message.chat.id, 'You must send your location to bot first')
+    user_id = message.from_user.id
+    location = check_location(user_id)
+    if location is None:
+        bot.send_message(message.chat.id, 'You must set you location first')
         return
     response = requests.get('http://api.openweathermap.org/data/2.5/forecast?lat=%f&lon=%f&cnt=10&appid=%s' % (
         location.latitude, location.longitude, WEATHER_API_KEY))
@@ -98,6 +100,21 @@ def get_forecast(message):
     else:
         print(response.status_code)
         bot.send_message(message.chat.id, 'Something went wrong, try again, please')
+
+
+def check_location(user_id) -> Union[telebot.types.Location, None]:
+    try:
+        location = cached_user_geo_info[user_id]
+        return location
+    except KeyError:
+        user_location_db = user_geo_info_db.find_one({'user_id': user_id})
+        if user_location_db is None:
+            return None
+        else:
+            location_dict = json.loads(user_location_db['location'])
+            location = telebot.types.Location(location_dict['longitude'], location_dict['latitude'])
+            cached_user_geo_info[user_id] = location
+            return location
 
 
 bot.polling()
