@@ -5,12 +5,16 @@ import datetime
 from pymongo import MongoClient
 from typing import Union
 
+with open('../.config') as config:
+    lines = config.readlines()
+    telegram_key, weather_key = lines[0].strip(), lines[1].strip()
+
 db_client = MongoClient()
 db = db_client.tgbot
 user_geo_info_db = db.user_info
 
-bot = telebot.TeleBot('Telegram token')
-WEATHER_API_KEY = 'c7af64c0bef0cc1f2509b33db0e0b2a2'
+bot = telebot.TeleBot(telegram_key)
+WEATHER_API_KEY = weather_key
 
 send_location_button_text = 'Set your location'
 get_weather_button_text = 'Get current weather'
