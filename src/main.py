@@ -1,11 +1,14 @@
-import pprint
-
 import telebot
 import requests
 import json
 import datetime
+from pymongo import MongoClient
 
-bot = telebot.TeleBot('TOKEN')
+db_client = MongoClient()
+db = db_client.tgbot
+user_geo_info_db = db.user_info
+
+bot = telebot.TeleBot('Telegram token')
 WEATHER_API_KEY = 'c7af64c0bef0cc1f2509b33db0e0b2a2'
 
 send_location_button_text = 'Set your location'
@@ -22,7 +25,7 @@ keyboard.add(send_location_button)
 keyboard.add(get_weather_button)
 keyboard.add(get_forecast_button)
 
-user_geo_info = dict()
+cached_user_geo_info = dict()
 
 
 @bot.message_handler(commands=['start'])
@@ -33,7 +36,12 @@ def start_message(message):
 
 @bot.message_handler(content_types=['location'])
 def send_location(message):
-    user_geo_info[message.from_user.id] = message.location
+    user_id = message.from_user.id
+    cached_user_geo_info[user_id] = message.location
+    if user_geo_info_db.find_one({'user_id': user_id}) is None:
+        user_geo_info_db.insert_one({'user_id': user_id, 'location': json.dumps(str(message.location))})
+    else:
+        user_geo_info_db.update_one({'user_id': user_id}, {'$set': {'location': json.dumps(str(message.location))}})
     bot.send_message(message.chat.id, 'Successfully set new location!')
 
 
@@ -47,7 +55,7 @@ def send_text(message):
 
 def get_weather(message):
     try:
-        location = user_geo_info[message.from_user.id]
+        location = cached_user_geo_info[message.from_user.id]
     except KeyError:
         bot.send_message(message.chat.id, 'You must send your location to bot first')
         return
@@ -67,7 +75,7 @@ def get_weather(message):
 
 def get_forecast(message):
     try:
-        location = user_geo_info[message.from_user.id]
+        location = cached_user_geo_info[message.from_user.id]
     except KeyError:
         bot.send_message(message.chat.id, 'You must send your location to bot first')
         return
